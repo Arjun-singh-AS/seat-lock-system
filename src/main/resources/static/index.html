@@ -62,6 +62,9 @@
     .result-status.conflict { color: #bf4c22; }
     .result-status.error { color: #b42318; }
     .result-detail { overflow-wrap: anywhere; color: var(--muted); line-height: 1.5; }
+    .result-info { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+    .release-button { min-height: 28px; padding: 0 9px; color: #a43d24; background: #fff0e9; font-size: 10px; }
+    .release-button:hover:not(:disabled) { background: #ffe2d5; }
     .summary { margin-bottom: 10px; padding: 11px; border-radius: 9px; background: #f2f5fa; font-size: 12px; font-weight: 700; }
     .api-error { margin-top: 12px; color: #b42318; font-size: 11px; line-height: 1.5; }
     .api-link { color: #bdc7d8; font-size: 11px; }
@@ -123,7 +126,7 @@
           <div class="actions">
             <button class="primary" id="runButton" type="button" disabled>Run simultaneous requests</button>
           </div>
-          <div class="warning"><strong>Test data only.</strong> Each successful request creates a pending booking and holds the seat for 10 minutes. This page does not automatically cancel it.</div>
+          <div class="warning"><strong>Test data only.</strong> Each successful request creates a pending booking and holds the seat for 10 minutes. Use the Release seat button in the result to cancel the booking and free the seat.</div>
           <div id="seatList" class="seats" aria-live="polite"></div>
           <div id="loadError" class="api-error" role="alert"></div>
         </div>
@@ -248,14 +251,54 @@
         row.className = "result";
         const status = document.createElement("div");
         status.className = `result-status ${outcome.ok ? "ok" : outcome.status === 409 ? "conflict" : "error"}`;
-        status.textContent = outcome.ok ? "CREATED" : outcome.status ? `HTTP ${outcome.status}` : "ERROR";
+        status.textContent = outcome.released ? "RELEASED" :
+          outcome.ok ? "CREATED" : outcome.status ? `HTTP ${outcome.status}` : "ERROR";
+        if (outcome.released) status.className = "result-status ok";
         const detail = document.createElement("div");
-        detail.className = "result-detail";
-        detail.textContent = outcome.ok
-          ? `User ${outcome.userId} · booking ${outcome.body.id} · ${outcome.body.status}`
+        detail.className = "result-info";
+        const message = document.createElement("div");
+        message.className = "result-detail";
+        message.textContent = outcome.ok
+          ? `User ${outcome.userId} · booking ${outcome.body.id} · ${outcome.released ? "CANCELLED" : outcome.body.status}`
           : `User ${outcome.userId} · ${outcome.body?.error || outcome.error || "Request failed"}`;
+        detail.append(message);
+        if (outcome.ok && !outcome.released) {
+          const releaseButton = document.createElement("button");
+          releaseButton.className = "release-button";
+          releaseButton.type = "button";
+          releaseButton.textContent = outcome.releasing ? "Releasing…" : "Release seat";
+          releaseButton.disabled = Boolean(outcome.releasing);
+          releaseButton.addEventListener("click", () => releaseBooking(outcome, outcomes));
+          detail.append(releaseButton);
+        } else if (outcome.releaseError) {
+          const error = document.createElement("div");
+          error.className = "api-error";
+          error.textContent = outcome.releaseError;
+          detail.append(error);
+        }
         row.append(status, detail);
         results.append(row);
+      }
+    }
+
+    async function releaseBooking(outcome, outcomes) {
+      if (!window.confirm(`Cancel booking ${outcome.body.id} and release its seat?`)) return;
+      outcome.releasing = true;
+      outcome.releaseError = "";
+      displayResults(outcomes);
+      try {
+        const { response, body } = await requestJson(`/api/bookings/${encodeURIComponent(outcome.body.id)}`, {
+          method: "DELETE"
+        });
+        if (!response.ok) throw new Error(body?.error || `Release failed (${response.status})`);
+        outcome.released = true;
+        displayResults(outcomes);
+        await loadSeats();
+      } catch (error) {
+        outcome.releaseError = error.message;
+      } finally {
+        outcome.releasing = false;
+        displayResults(outcomes);
       }
     }
 
