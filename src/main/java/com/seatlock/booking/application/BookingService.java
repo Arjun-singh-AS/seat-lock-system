@@ -32,11 +32,12 @@ public class BookingService {
     private final BookingSeatRepository bookingSeats;
     private final EventRepository events;
     private final SeatRepository seats;
+    private final SeatRequestLock seatRequestLock;
     private final Clock clock;
     private final Duration holdDuration;
 
     public BookingService(BookingRepository bookings, BookingSeatRepository bookingSeats,
-                          EventRepository events, SeatRepository seats, Clock clock,
+                          EventRepository events, SeatRepository seats, SeatRequestLock seatRequestLock, Clock clock,
                           @Value("${seatlock.booking.hold-duration:PT10M}") Duration holdDuration) {
         if (holdDuration.isZero() || holdDuration.isNegative()) {
             throw new IllegalArgumentException("Booking hold duration must be greater than zero");
@@ -45,6 +46,7 @@ public class BookingService {
         this.bookingSeats = bookingSeats;
         this.events = events;
         this.seats = seats;
+        this.seatRequestLock = seatRequestLock;
         this.clock = clock;
         this.holdDuration = holdDuration;
     }
@@ -63,6 +65,10 @@ public class BookingService {
             throw new ResourceConflictException("Every requested seat must exist on the event's screen");
         }
 
+        return seatRequestLock.withLocks(event.getId(), seatIds, () -> reserveSeats(request, event, seatIds));
+    }
+
+    private BookingDocument reserveSeats(CreateBookingRequest request, EventDocument event, List<String> seatIds) {
         Instant now = clock.instant();
         Instant expiresAt = now.plus(holdDuration);
         BookingDocument booking = new BookingDocument(

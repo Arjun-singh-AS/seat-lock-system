@@ -89,7 +89,7 @@
     <section class="intro">
       <div class="eyebrow">Developer playground</div>
       <h1>Race the same seat.</h1>
-      <p>Send several booking requests at the same time for one seat. The database should accept one request and reject the competing requests.</p>
+      <p>Send several booking requests at the same time for one seat. Requests for that seat queue behind the active booking operation; MongoDB should accept one reservation and reject the competing requests.</p>
     </section>
     <div class="layout">
       <section class="card">
@@ -126,7 +126,7 @@
           <div class="actions">
             <button class="primary" id="runButton" type="button" disabled>Run simultaneous requests</button>
           </div>
-          <div class="warning"><strong>Test data only.</strong> Each successful request creates a pending booking and holds the seat for 10 minutes. Use the Release seat button in the result to cancel the booking and free the seat.</div>
+          <div class="warning"><strong>Test data only.</strong> Competing calls wait for the current booking operation to finish, then receive a conflict if the seat is held. Each successful request holds the seat for 10 minutes. Use Release seat to cancel the booking and free it.</div>
           <div id="seatList" class="seats" aria-live="polite"></div>
           <div id="loadError" class="api-error" role="alert"></div>
         </div>

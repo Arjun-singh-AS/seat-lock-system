@@ -5,6 +5,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,7 +32,9 @@ import com.seatlock.venue.domain.SeatDocument;
 import com.seatlock.venue.infrastructure.persistence.SeatRepository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,11 +55,13 @@ class BookingServiceTests {
     @Mock
     private SeatRepository seats;
 
+    private SeatRequestLock seatRequestLock;
     private BookingService service;
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
-        service = new BookingService(bookings, bookingSeats, events, seats,
+        seatRequestLock = new SeatRequestLock();
+        service = new BookingService(bookings, bookingSeats, events, seats, seatRequestLock,
                 Clock.fixed(Instant.parse("2026-10-01T00:00:00Z"), java.time.ZoneOffset.UTC),
                 Duration.ofMinutes(10));
     }
@@ -117,6 +127,50 @@ class BookingServiceTests {
                 new CreateBookingRequest("user-1", "event-1", List.of("seat-2"))));
 
         verify(bookingSeats, never()).save(any(BookingSeatDocument.class));
+    }
+
+    @Test
+    void concurrentRequestWaitsForFirstAttemptThenConflicts() throws Exception {
+        CountDownLatch firstReservationStarted = new CountDownLatch(1);
+        CountDownLatch finishFirstReservation = new CountDownLatch(1);
+        CountDownLatch secondRequestStarted = new CountDownLatch(1);
+        AtomicInteger reservationAttempts = new AtomicInteger();
+        when(events.findById("event-1")).thenReturn(Optional.of(event()));
+        when(seats.findAllById(List.of("seat-1"))).thenReturn(List.of(seat("seat-1", "screen-1")));
+        when(bookingSeats.save(any(BookingSeatDocument.class))).thenAnswer(invocation -> {
+            if (reservationAttempts.getAndIncrement() == 0) {
+                firstReservationStarted.countDown();
+                assertTrue(finishFirstReservation.await(5, TimeUnit.SECONDS));
+                return invocation.getArgument(0);
+            }
+            throw new DuplicateKeyException("seat already reserved");
+        });
+        when(bookings.insert(any(BookingDocument.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstRequest = executor.submit(() ->
+                    service.create(new CreateBookingRequest("user-1", "event-1", List.of("seat-1"))));
+            assertTrue(firstReservationStarted.await(5, TimeUnit.SECONDS));
+
+            var secondRequest = executor.submit(() -> {
+                secondRequestStarted.countDown();
+                return service.create(new CreateBookingRequest("user-2", "event-1", List.of("seat-1")));
+            });
+            assertTrue(secondRequestStarted.await(5, TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class, () -> secondRequest.get(100, TimeUnit.MILLISECONDS));
+
+            finishFirstReservation.countDown();
+            assertEquals(BookingStatus.PENDING, firstRequest.get(5, TimeUnit.SECONDS).getStatus());
+            ExecutionException failure = assertThrows(
+                    ExecutionException.class, () -> secondRequest.get(5, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof ResourceConflictException);
+            assertFalse(firstRequest.isCancelled());
+            verify(bookings).insert(any(BookingDocument.class));
+        } finally {
+            finishFirstReservation.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
