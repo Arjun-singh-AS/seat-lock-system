@@ -1,3 +1,7 @@
 spring:
   application:
     name: seatlock
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/seatlock}
+      auto-index-creation: true
