@@ -29,6 +29,8 @@ mvn spring-boot:run
 
 The API starts at `http://localhost:8080`.
 
+Open `http://localhost:8080/` for the browser-based concurrency playground. Select an event and seat, choose how many simultaneous booking requests to send, then run the race to see each response and refresh the availability. Successful requests create normal pending holds; cancel them through `DELETE /api/bookings/{bookingId}` or wait for the configured expiry.
+
 ## API
 
 All resources support `POST` (create), `GET` (list), `GET /{id}`, `PUT /{id}` (replace), and `DELETE /{id}`. Creates return `201 Created`; deletes return `204 No Content`.

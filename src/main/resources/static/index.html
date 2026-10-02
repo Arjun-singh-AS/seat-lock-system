@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a2d">
+  <title>SeatLock | Concurrency Lab</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f2f5fa;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --navy: #101a2d;
+      --blue: #375dfb;
+      --muted: #68738a;
+      --line: #e3e8f1;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    header { background: var(--navy); color: #fff; padding: 22px max(24px, calc((100vw - 1080px) / 2)); }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 19px; font-weight: 750; letter-spacing: -.03em; }
+    .brand-mark { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: #375dfb; font-size: 19px; }
+    header p { margin: 8px 0 0 48px; color: #bdc7d8; font-size: 13px; }
+    main { width: min(1080px, calc(100% - 36px)); margin: 34px auto 56px; }
+    .intro { margin-bottom: 24px; }
+    .eyebrow { color: var(--blue); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 7px 0 8px; font-size: clamp(26px, 4vw, 36px); letter-spacing: -.045em; }
+    .intro p { max-width: 680px; margin: 0; color: var(--muted); line-height: 1.6; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+    .card { border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 8px 24px #202f4b0a; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; padding: 19px 21px; border-bottom: 1px solid var(--line); }
+    .card-head h2 { margin: 0; font-size: 15px; }
+    .card-body { padding: 21px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .field.full { grid-column: 1 / -1; }
+    label { color: #45516a; font-size: 12px; font-weight: 700; }
+    input, select { width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid #dce2ec; border-radius: 9px; background: #fff; color: #172033; font: inherit; font-size: 13px; }
+    input:focus, select:focus { outline: 3px solid #375dfb26; border-color: #7690ff; }
+    .hint { color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 8px; padding: 0 15px; border: 0; border-radius: 9px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 750; }
+    button:disabled { cursor: wait; opacity: .55; }
+    .primary { color: white; background: var(--blue); }
+    .secondary { color: #34415b; background: #edf1f7; }
+    .warning { margin-top: 17px; padding: 12px 13px; border: 1px solid #f2dfad; border-radius: 10px; background: #fff9e9; color: #705516; font-size: 11px; line-height: 1.5; }
+    .seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 10px; margin-top: 21px; }
+    .seat { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+    .seat-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: #edf1ff; color: var(--blue); font-size: 13px; font-weight: 800; }
+    .seat-name { font-size: 12px; font-weight: 750; }
+    .seat-meta { margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .pill { margin-left: auto; padding: 4px 7px; border-radius: 20px; background: #e7f7ee; color: #19844a; font-size: 9px; font-weight: 800; }
+    .pill.reserved { background: #fff0e9; color: #bf4c22; }
+    .results-empty { padding: 22px 10px; color: var(--muted); text-align: center; font-size: 12px; }
+    .result { display: grid; grid-template-columns: 60px 1fr; gap: 8px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
+    .result:last-child { border-bottom: 0; }
+    .result-status { font-weight: 800; }
+    .result-status.ok { color: #19844a; }
+    .result-status.conflict { color: #bf4c22; }
+    .result-status.error { color: #b42318; }
+    .result-detail { overflow-wrap: anywhere; color: var(--muted); line-height: 1.5; }
+    .summary { margin-bottom: 10px; padding: 11px; border-radius: 9px; background: #f2f5fa; font-size: 12px; font-weight: 700; }
+    .api-error { margin-top: 12px; color: #b42318; font-size: 11px; line-height: 1.5; }
+    .api-link { color: #bdc7d8; font-size: 11px; }
+    @media (max-width: 760px) {
+      .layout { grid-template-columns: 1fr; }
+      header { padding-left: 18px; padding-right: 18px; }
+      main { margin-top: 24px; }
+    }
+    @media (max-width: 440px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      .card-body { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="brand-mark" aria-hidden="true">S</span> SeatLock</div>
+    <p>Ticket reservation backend · Concurrency test console</p>
+  </header>
+  <main>
+    <section class="intro">
+      <div class="eyebrow">Developer playground</div>
+      <h1>Race the same seat.</h1>
+      <p>Send several booking requests at the same time for one seat. The database should accept one request and reject the competing requests.</p>
+    </section>
+    <div class="layout">
+      <section class="card">
+        <div class="card-head">
+          <h2>Concurrent booking test</h2>
+          <button class="secondary" id="refreshButton" type="button">Refresh data</button>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="field full">
+              <label for="eventSelect">Event</label>
+              <select id="eventSelect"><option value="">Loading events…</option></select>
+            </div>
+            <div class="field full">
+              <label for="seatSelect">Seat to request</label>
+              <select id="seatSelect" disabled><option value="">Select an event first</option></select>
+              <span class="hint">Choose an available seat for a fresh race, or a reserved seat to confirm requests are rejected.</span>
+            </div>
+            <div class="field">
+              <label for="requestCount">Simultaneous requests</label>
+              <select id="requestCount">
+                <option value="4">4 requests</option>
+                <option value="5" selected>5 requests</option>
+                <option value="10">10 requests</option>
+                <option value="25">25 requests</option>
+                <option value="100">100 requests</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="userPrefix">Demo user prefix</label>
+              <input id="userPrefix" value="race-user" maxlength="50">
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary" id="runButton" type="button" disabled>Run simultaneous requests</button>
+          </div>
+          <div class="warning"><strong>Test data only.</strong> Each successful request creates a pending booking and holds the seat for 10 minutes. This page does not automatically cancel it.</div>
+          <div id="seatList" class="seats" aria-live="polite"></div>
+          <div id="loadError" class="api-error" role="alert"></div>
+        </div>
+      </section>
+      <aside class="card">
+        <div class="card-head">
+          <h2>Request results</h2>
+          <span class="hint" id="resultCount">0 requests</span>
+        </div>
+        <div class="card-body" id="results" aria-live="polite">
+          <div class="results-empty">Run a test to see each API response here.</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script>
+    const eventSelect = document.querySelector("#eventSelect");
+    const seatSelect = document.querySelector("#seatSelect");
+    const requestCount = document.querySelector("#requestCount");
+    const userPrefix = document.querySelector("#userPrefix");
+    const runButton = document.querySelector("#runButton");
+    const seatList = document.querySelector("#seatList");
+    const results = document.querySelector("#results");
+    const resultCount = document.querySelector("#resultCount");
+    const loadError = document.querySelector("#loadError");
+
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      let body = null;
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = { error: text };
+        }
+      }
+      return { response, body };
+    }
+
+    async function loadEvents() {
+      loadError.textContent = "";
+      eventSelect.replaceChildren(new Option("Loading events…", ""));
+      seatSelect.replaceChildren(new Option("Select an event first", ""));
+      seatSelect.disabled = true;
+      runButton.disabled = true;
+      seatList.replaceChildren();
+      try {
+        const { response, body } = await requestJson("/api/events");
+        if (!response.ok) throw new Error(body?.error || `Loading events failed (${response.status})`);
+        eventSelect.replaceChildren(new Option("Choose an event", ""));
+        for (const event of body) {
+          const date = event.startsAt ? new Date(event.startsAt).toLocaleString() : "";
+          eventSelect.add(new Option(`${event.title} · ${date}`, event.id));
+        }
+        if (body.length === 0) {
+          eventSelect.replaceChildren(new Option("No events found — create one through the API first", ""));
+        }
+      } catch (error) {
+        eventSelect.replaceChildren(new Option("Could not load events", ""));
+        loadError.textContent = error.message;
+      }
+    }
+
+    async function loadSeats() {
+      const eventId = eventSelect.value;
+      seatList.replaceChildren();
+      seatSelect.replaceChildren(new Option(eventId ? "Loading seats…" : "Select an event first", ""));
+      seatSelect.disabled = true;
+      runButton.disabled = true;
+      if (!eventId) return;
+      loadError.textContent = "";
+      try {
+        const { response, body } = await requestJson(`/api/events/${encodeURIComponent(eventId)}/seats`);
+        if (!response.ok) throw new Error(body?.error || `Loading seats failed (${response.status})`);
+        seatSelect.replaceChildren(new Option("Choose a seat", ""));
+        for (const seat of body) {
+          const label = `Row ${seat.rowLabel}, seat ${seat.seatNumber} · ${seat.status}`;
+          seatSelect.add(new Option(label, seat.seatId));
+          const card = document.createElement("div");
+          card.className = "seat";
+          const icon = document.createElement("span");
+          icon.className = "seat-icon";
+          icon.textContent = seat.rowLabel + seat.seatNumber;
+          const details = document.createElement("div");
+          const name = document.createElement("div");
+          name.className = "seat-name";
+          name.textContent = `Row ${seat.rowLabel}, seat ${seat.seatNumber}`;
+          const meta = document.createElement("div");
+          meta.className = "seat-meta";
+          meta.textContent = seat.category;
+          details.append(name, meta);
+          const status = document.createElement("span");
+          status.className = `pill${seat.status === "RESERVED" ? " reserved" : ""}`;
+          status.textContent = seat.status;
+          card.append(icon, details, status);
+          seatList.append(card);
+        }
+        if (body.length === 0) seatSelect.replaceChildren(new Option("No seats are configured for this event", ""));
+        seatSelect.disabled = body.length === 0;
+        updateRunButton();
+      } catch (error) {
+        loadError.textContent = error.message;
+      }
+    }
+
+    function updateRunButton() {
+      runButton.disabled = !eventSelect.value || !seatSelect.value || !userPrefix.value.trim();
+    }
+
+    function displayResults(outcomes) {
+      const successes = outcomes.filter(result => result.ok).length;
+      const conflicts = outcomes.filter(result => result.status === 409).length;
+      const failures = outcomes.length - successes - conflicts;
+      results.replaceChildren();
+      const summary = document.createElement("div");
+      summary.className = "summary";
+      summary.textContent = `${successes} succeeded · ${conflicts} seat conflicts · ${failures} other errors`;
+      results.append(summary);
+      for (const outcome of outcomes) {
+        const row = document.createElement("div");
+        row.className = "result";
+        const status = document.createElement("div");
+        status.className = `result-status ${outcome.ok ? "ok" : outcome.status === 409 ? "conflict" : "error"}`;
+        status.textContent = outcome.ok ? "CREATED" : outcome.status ? `HTTP ${outcome.status}` : "ERROR";
+        const detail = document.createElement("div");
+        detail.className = "result-detail";
+        detail.textContent = outcome.ok
+          ? `User ${outcome.userId} · booking ${outcome.body.id} · ${outcome.body.status}`
+          : `User ${outcome.userId} · ${outcome.body?.error || outcome.error || "Request failed"}`;
+        row.append(status, detail);
+        results.append(row);
+      }
+    }
+
+    async function runRace() {
+      const eventId = eventSelect.value;
+      const seatId = seatSelect.value;
+      const count = Number(requestCount.value);
+      const prefix = userPrefix.value.trim();
+      if (!eventId || !seatId || !prefix) return;
+
+      runButton.disabled = true;
+      runButton.textContent = `Sending ${count} requests…`;
+      results.replaceChildren();
+      const startedAt = performance.now();
+      const requests = Array.from({ length: count }, async (_, index) => {
+        const userId = `${prefix}-${crypto.randomUUID()}-${index + 1}`;
+        try {
+          const { response, body } = await requestJson("/api/bookings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, eventId, seatIds: [seatId] })
+          });
+          return { ok: response.status === 201, status: response.status, body, userId };
+        } catch (error) {
+          return { ok: false, error: error.message, userId };
+        }
+      });
+      const outcomes = await Promise.all(requests);
+      displayResults(outcomes);
+      resultCount.textContent = `${count} requests · ${(performance.now() - startedAt).toFixed(0)} ms`;
+      runButton.textContent = "Run simultaneous requests";
+      await loadSeats();
+    }
+
+    eventSelect.addEventListener("change", loadSeats);
+    seatSelect.addEventListener("change", updateRunButton);
+    userPrefix.addEventListener("input", updateRunButton);
+    document.querySelector("#refreshButton").addEventListener("click", async () => {
+      await loadEvents();
+      if (eventSelect.value) await loadSeats();
+    });
+    runButton.addEventListener("click", runRace);
+    loadEvents();
+  </script>
+</body>
+</html>
