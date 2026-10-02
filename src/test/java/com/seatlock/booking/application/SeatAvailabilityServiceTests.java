@@ -1,12 +1,12 @@
 package com.seatlock.booking.application;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,8 +33,13 @@ class SeatAvailabilityServiceTests {
     @Mock
     private BookingSeatRepository bookingSeats;
 
-    @InjectMocks
     private SeatAvailabilityService service;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        service = new SeatAvailabilityService(events, seats, bookingSeats,
+                Clock.fixed(Instant.parse("2026-10-01T00:00:00Z"), java.time.ZoneOffset.UTC));
+    }
 
     @Test
     void returnsAvailabilityForEventScreenSeats() {
@@ -43,8 +48,9 @@ class SeatAvailabilityServiceTests {
                 Instant.parse("2026-10-15T21:00:00Z"));
         event.setId("event-1");
         when(events.findById("event-1")).thenReturn(Optional.of(event));
-        when(bookingSeats.findByEventId("event-1"))
-                .thenReturn(List.of(new BookingSeatDocument("event-1", "seat-1", "booking-1")));
+        when(bookingSeats.findByEventIdAndExpiresAtAfter("event-1", Instant.parse("2026-10-01T00:00:00Z")))
+                .thenReturn(List.of(new BookingSeatDocument(
+                        "event-1", "seat-1", "booking-1", Instant.parse("2026-10-01T00:10:00Z"))));
         when(seats.findByScreenId("screen-1")).thenReturn(List.of(
                 seat("seat-1", 1), seat("seat-2", 2)));
 

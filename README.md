@@ -44,7 +44,16 @@ All resources support `POST` (create), `GET` (list), `GET /{id}`, `PUT /{id}` (r
 
 Screens require an existing venue. Seats and events require an existing screen. A venue with screens, or a screen with seats or events, cannot be deleted.
 
-Booking creation reserves the requested seats for that event and rejects seats assigned to a different screen or already reserved for the event. A unique MongoDB index on `(eventId, seatId)` is the final guard against two concurrent requests reserving the same seat. A booking starts as `PENDING`; `DELETE /api/bookings/{bookingId}` cancels it and releases its seats, and repeating the cancellation is safe. Pending bookings do not expire automatically yet, so cancel them explicitly. User IDs are caller-supplied identifiers in this phase; authentication and user account management are not implemented yet. Pending-booking expiration and payment confirmation are planned follow-up work.
+Booking creation reserves the requested seats for that event and rejects seats assigned to a different screen or already reserved for the event. A unique MongoDB index on `(eventId, seatId)` is the final guard against two concurrent requests reserving the same seat. A booking starts as `PENDING` and holds seats for 10 minutes by default; set `SEATLOCK_BOOKING_HOLD_DURATION` to a Java duration (for example, `PT5M`) to change it. Expired bookings are marked `EXPIRED` by a background scan and when booking details/history are read. Reservation documents also have a MongoDB TTL index for eventual cleanup. `DELETE /api/bookings/{bookingId}` cancels a pending booking and releases its seats; repeating the cancellation is safe. User IDs are caller-supplied identifiers; authentication and user account management are not implemented yet.
+
+Seat acquisition uses MongoDB's unique `(eventId, seatId)` index as the authoritative concurrency guard. Multi-seat requests release any partial holds when one requested seat conflicts. Expiration is a lease, not a payment confirmation: no payment or `CONFIRMED` state is implemented in this phase.
+
+To run the real MongoDB concurrency test against a dedicated test database, set `MONGODB_TEST_URI` (it is deliberately skipped when that variable is absent):
+
+```powershell
+$env:MONGODB_TEST_URI = "mongodb://localhost:27017/seatlock_test"
+mvn -Dtest=BookingConcurrencyIntegrationTests test
+```
 
 Example booking:
 
@@ -148,6 +157,6 @@ Feature-specific code stays together: `api` exposes HTTP endpoints, `application
 
 - [x] Phase 1: MongoDB configuration and event/venue/screen/seat CRUD APIs
 - [x] Phase 2: Event-specific seat availability and pending booking flow
-- [ ] Phase 3: Concurrency-safe reservations, expiration, and race-condition tests
+- [x] Phase 3: Unique-index concurrency protection, expiring holds, and race-condition test
 - [ ] Phase 4: Redis, RabbitMQ, payment simulation, and idempotency
 - [ ] Phase 5: Docker, API documentation, metrics, CI/CD, and deployment

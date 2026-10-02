@@ -17,17 +17,20 @@ public class BookingDocument {
     private List<String> seatIds;
     private BookingStatus status;
     private Instant createdAt;
+    private Instant expiresAt;
 
     public BookingDocument() {
     }
 
-    public BookingDocument(String userId, String eventId, List<String> seatIds) {
+    public BookingDocument(String userId, String eventId, List<String> seatIds,
+                           Instant createdAt, Instant expiresAt) {
         this.id = UUID.randomUUID().toString();
         this.userId = userId;
         this.eventId = eventId;
         this.seatIds = List.copyOf(seatIds);
         this.status = BookingStatus.PENDING;
-        this.createdAt = Instant.now();
+        this.createdAt = createdAt;
+        this.expiresAt = expiresAt;
     }
 
     public String getId() { return id; }
@@ -42,4 +45,6 @@ public class BookingDocument {
     public void setStatus(BookingStatus status) { this.status = status; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public Instant getExpiresAt() { return expiresAt; }
+    public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
 }

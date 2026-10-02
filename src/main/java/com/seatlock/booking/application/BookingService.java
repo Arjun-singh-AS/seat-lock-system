@@ -3,9 +3,14 @@ package com.seatlock.booking.application;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import com.seatlock.booking.api.CreateBookingRequest;
 import com.seatlock.booking.domain.BookingDocument;
@@ -27,13 +32,21 @@ public class BookingService {
     private final BookingSeatRepository bookingSeats;
     private final EventRepository events;
     private final SeatRepository seats;
+    private final Clock clock;
+    private final Duration holdDuration;
 
     public BookingService(BookingRepository bookings, BookingSeatRepository bookingSeats,
-                          EventRepository events, SeatRepository seats) {
+                          EventRepository events, SeatRepository seats, Clock clock,
+                          @Value("${seatlock.booking.hold-duration:PT10M}") Duration holdDuration) {
+        if (holdDuration.isZero() || holdDuration.isNegative()) {
+            throw new IllegalArgumentException("Booking hold duration must be greater than zero");
+        }
         this.bookings = bookings;
         this.bookingSeats = bookingSeats;
         this.events = events;
         this.seats = seats;
+        this.clock = clock;
+        this.holdDuration = holdDuration;
     }
 
     public BookingDocument create(CreateBookingRequest request) {
@@ -50,11 +63,16 @@ public class BookingService {
             throw new ResourceConflictException("Every requested seat must exist on the event's screen");
         }
 
-        BookingDocument booking = new BookingDocument(request.userId(), event.getId(), seatIds);
+        Instant now = clock.instant();
+        Instant expiresAt = now.plus(holdDuration);
+        BookingDocument booking = new BookingDocument(
+                request.userId(), event.getId(), seatIds, now, expiresAt);
         List<BookingSeatDocument> acquiredSeats = new ArrayList<>();
         try {
             for (String seatId : seatIds) {
-                acquiredSeats.add(bookingSeats.save(new BookingSeatDocument(event.getId(), seatId, booking.getId())));
+                bookingSeats.deleteByEventIdAndSeatIdAndExpiresAtLessThanEqual(event.getId(), seatId, now);
+                acquiredSeats.add(bookingSeats.save(
+                        new BookingSeatDocument(event.getId(), seatId, booking.getId(), expiresAt)));
             }
             return bookings.insert(booking);
         } catch (DuplicateKeyException exception) {
@@ -69,11 +87,15 @@ public class BookingService {
     }
 
     public BookingDocument findById(String id) {
-        return bookings.findById(id).orElseThrow(() -> new ResourceNotFoundException("Booking", id));
+        BookingDocument booking = bookings.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", id));
+        return expireIfNeeded(booking);
     }
 
     public List<BookingDocument> findByUser(String userId) {
-        return bookings.findByUserIdOrderByCreatedAtDesc(userId);
+        return bookings.findByUserIdOrderByCreatedAtDesc(userId).stream()
+                .map(this::expireIfNeeded)
+                .toList();
     }
 
     public void cancel(String id) {
@@ -81,9 +103,28 @@ public class BookingService {
         if (booking.getStatus() == BookingStatus.CANCELLED) {
             return;
         }
+        if (booking.getStatus() == BookingStatus.EXPIRED) {
+            return;
+        }
         booking.setStatus(BookingStatus.CANCELLED);
         bookings.save(booking);
         bookingSeats.deleteByBookingId(id);
+    }
+
+    @Scheduled(fixedDelayString = "${seatlock.booking.expiration-scan-interval-ms:30000}")
+    public void expirePendingBookings() {
+        List<BookingDocument> expired = bookings.findByStatusAndExpiresAtLessThanEqual(
+                BookingStatus.PENDING, clock.instant());
+        expired.forEach(this::expireIfNeeded);
+    }
+
+    private BookingDocument expireIfNeeded(BookingDocument booking) {
+        if (booking.getStatus() == BookingStatus.PENDING && !booking.getExpiresAt().isAfter(clock.instant())) {
+            booking.setStatus(BookingStatus.EXPIRED);
+            bookings.save(booking);
+            bookingSeats.deleteByBookingId(booking.getId());
+        }
+        return booking;
     }
 
     private void releaseAcquiredSeats(List<BookingSeatDocument> acquiredSeats, RuntimeException originalFailure) {

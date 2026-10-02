@@ -12,6 +12,7 @@ import com.seatlock.shared.exception.ResourceConflictException;
 import com.seatlock.venue.api.SeatRequest;
 import com.seatlock.venue.domain.ScreenDocument;
 import com.seatlock.venue.domain.SeatCategory;
+import com.seatlock.booking.infrastructure.persistence.BookingSeatRepository;
 import com.seatlock.venue.infrastructure.persistence.ScreenRepository;
 import com.seatlock.venue.infrastructure.persistence.SeatRepository;
 
@@ -28,6 +29,9 @@ class SeatServiceTests {
 
     @Mock
     private ScreenRepository screens;
+
+    @Mock
+    private BookingSeatRepository bookingSeats;
 
     @InjectMocks
     private SeatService service;

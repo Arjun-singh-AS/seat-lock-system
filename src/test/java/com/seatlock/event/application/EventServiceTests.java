@@ -9,6 +9,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.seatlock.event.api.EventRequest;
+import com.seatlock.booking.infrastructure.persistence.BookingRepository;
 import com.seatlock.event.infrastructure.persistence.EventRepository;
 import com.seatlock.shared.exception.ResourceConflictException;
 import com.seatlock.venue.infrastructure.persistence.ScreenRepository;
@@ -23,6 +24,9 @@ class EventServiceTests {
 
     @Mock
     private EventRepository events;
+
+    @Mock
+    private BookingRepository bookings;
 
     @Mock
     private ScreenRepository screens;

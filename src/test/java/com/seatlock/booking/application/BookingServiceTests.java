@@ -1,13 +1,14 @@
 package com.seatlock.booking.application;
 
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.dao.DuplicateKeyException;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -46,14 +47,20 @@ class BookingServiceTests {
     @Mock
     private SeatRepository seats;
 
-    @InjectMocks
     private BookingService service;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        service = new BookingService(bookings, bookingSeats, events, seats,
+                Clock.fixed(Instant.parse("2026-10-01T00:00:00Z"), java.time.ZoneOffset.UTC),
+                Duration.ofMinutes(10));
+    }
 
     @Test
     void createReservesRequestedSeatsAndCreatesPendingBooking() {
         EventDocument event = event();
         SeatDocument seat = seat("seat-1", "screen-1");
-        BookingSeatDocument reservation = new BookingSeatDocument("event-1", "seat-1", "booking-1");
+        BookingSeatDocument reservation = reservation("seat-1", "booking-1");
         when(events.findById("event-1")).thenReturn(Optional.of(event));
         when(seats.findAllById(List.of("seat-1"))).thenReturn(List.of(seat));
         when(bookingSeats.save(any(BookingSeatDocument.class))).thenReturn(reservation);
@@ -69,12 +76,27 @@ class BookingServiceTests {
     }
 
     @Test
+    void createSetsTheConfiguredHoldExpiration() {
+        EventDocument event = event();
+        when(events.findById("event-1")).thenReturn(Optional.of(event));
+        when(seats.findAllById(List.of("seat-1"))).thenReturn(List.of(seat("seat-1", "screen-1")));
+        when(bookings.insert(any(BookingDocument.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(new CreateBookingRequest("user-1", "event-1", List.of("seat-1")));
+
+        org.mockito.ArgumentCaptor<BookingDocument> bookingCaptor =
+                org.mockito.ArgumentCaptor.forClass(BookingDocument.class);
+        verify(bookings).insert(bookingCaptor.capture());
+        assertEquals(Instant.parse("2026-10-01T00:10:00Z"), bookingCaptor.getValue().getExpiresAt());
+    }
+
+    @Test
     void createReleasesPreviouslyReservedSeatsIfAnotherRequestedSeatIsTaken() {
         EventDocument event = event();
         when(events.findById("event-1")).thenReturn(Optional.of(event));
         when(seats.findAllById(List.of("seat-1", "seat-2")))
                 .thenReturn(List.of(seat("seat-1", "screen-1"), seat("seat-2", "screen-1")));
-        BookingSeatDocument firstReservation = new BookingSeatDocument("event-1", "seat-1", "booking-1");
+        BookingSeatDocument firstReservation = reservation("seat-1", "booking-1");
         when(bookingSeats.save(any(BookingSeatDocument.class)))
                 .thenReturn(firstReservation)
                 .thenThrow(new DuplicateKeyException("duplicate"));
@@ -99,7 +121,8 @@ class BookingServiceTests {
 
     @Test
     void cancelMarksBookingCancelledAndReleasesItsSeats() {
-        var booking = new BookingDocument("user-1", "event-1", List.of("seat-1"));
+        var booking = new BookingDocument("user-1", "event-1", List.of("seat-1"),
+                Instant.parse("2026-10-01T00:00:00Z"), Instant.parse("2026-10-01T00:10:00Z"));
         booking.setId("booking-1");
         when(bookings.findById("booking-1")).thenReturn(Optional.of(booking));
         when(bookings.save(booking)).thenReturn(booking);
@@ -107,6 +130,21 @@ class BookingServiceTests {
         service.cancel("booking-1");
 
         assertEquals(BookingStatus.CANCELLED, booking.getStatus());
+        verify(bookings).save(booking);
+        verify(bookingSeats).deleteByBookingId("booking-1");
+    }
+
+    @Test
+    void readExpiresPendingBookingAndReleasesItsSeats() {
+        var booking = new BookingDocument("user-1", "event-1", List.of("seat-1"),
+                Instant.parse("2026-09-30T23:50:00Z"), Instant.parse("2026-10-01T00:00:00Z"));
+        booking.setId("booking-1");
+        when(bookings.findById("booking-1")).thenReturn(Optional.of(booking));
+        when(bookings.save(booking)).thenReturn(booking);
+
+        var result = service.findById("booking-1");
+
+        assertEquals(BookingStatus.EXPIRED, result.getStatus());
         verify(bookings).save(booking);
         verify(bookingSeats).deleteByBookingId("booking-1");
     }
@@ -123,5 +161,10 @@ class BookingServiceTests {
         SeatDocument seat = new SeatDocument(screenId, "A", 1, SeatCategory.STANDARD);
         seat.setId(id);
         return seat;
+    }
+
+    private BookingSeatDocument reservation(String seatId, String bookingId) {
+        return new BookingSeatDocument("event-1", seatId, bookingId,
+                Instant.parse("2026-10-01T00:10:00Z"));
     }
 }

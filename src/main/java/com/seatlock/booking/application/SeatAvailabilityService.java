@@ -3,6 +3,7 @@ package com.seatlock.booking.application;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.time.Clock;
 
 import org.springframework.stereotype.Service;
 
@@ -20,19 +21,22 @@ public class SeatAvailabilityService {
     private final EventRepository events;
     private final SeatRepository seats;
     private final BookingSeatRepository bookingSeats;
+    private final Clock clock;
 
     public SeatAvailabilityService(EventRepository events, SeatRepository seats,
-                                   BookingSeatRepository bookingSeats) {
+                                   BookingSeatRepository bookingSeats, Clock clock) {
         this.events = events;
         this.seats = seats;
         this.bookingSeats = bookingSeats;
+        this.clock = clock;
     }
 
     public List<SeatAvailabilityResponse> findByEvent(String eventId) {
         EventDocument event = events.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event", eventId));
         Set<String> reservedSeatIds = new HashSet<>();
-        bookingSeats.findByEventId(eventId).forEach(reservation -> reservedSeatIds.add(reservation.getSeatId()));
+        bookingSeats.findByEventIdAndExpiresAtAfter(eventId, clock.instant())
+                .forEach(reservation -> reservedSeatIds.add(reservation.getSeatId()));
 
         return seats.findByScreenId(event.getScreenId()).stream()
                 .map(seat -> toResponse(seat, reservedSeatIds))

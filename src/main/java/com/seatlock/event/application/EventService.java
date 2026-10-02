@@ -46,8 +46,8 @@ public class EventService {
     public EventDocument update(String id, EventRequest request) {
         EventDocument event = findById(id);
         validate(request);
-        if (!event.getScreenId().equals(request.screenId()) && bookings.existsByEventId(id)) {
-            throw new ResourceConflictException("Event screen cannot change after bookings have been created");
+        if (bookings.existsByEventId(id) && hasBookingSensitiveChanges(event, request)) {
+            throw new ResourceConflictException("Event details cannot change after bookings have been created");
         }
         event.setScreenId(request.screenId());
         event.setTitle(request.title());
@@ -76,5 +76,13 @@ public class EventService {
         if (!screens.existsById(screenId)) {
             throw new ResourceNotFoundException("Screen", screenId);
         }
+    }
+
+    private boolean hasBookingSensitiveChanges(EventDocument event, EventRequest request) {
+        return !event.getScreenId().equals(request.screenId())
+                || !event.getTitle().equals(request.title())
+                || !java.util.Objects.equals(event.getDescription(), request.description())
+                || !event.getStartsAt().equals(request.startsAt())
+                || !event.getEndsAt().equals(request.endsAt());
     }
 }

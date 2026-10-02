@@ -5,3 +5,7 @@ spring:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/seatlock}
       auto-index-creation: true
+seatlock:
+  booking:
+    hold-duration: ${SEATLOCK_BOOKING_HOLD_DURATION:PT10M}
+    expiration-scan-interval-ms: ${SEATLOCK_BOOKING_EXPIRATION_SCAN_INTERVAL_MS:30000}
