@@ -1,6 +1,6 @@
 # SeatLock
 
-SeatLock is a Spring Boot backend for concurrent ticket booking and seat reservations. Phase 1 provides MongoDB-backed CRUD APIs for events, venues, screens, and seats.
+SeatLock is a Spring Boot backend for concurrent ticket booking and seat reservations. Phase 1 provides MongoDB-backed CRUD APIs for events, venues, screens, and seats. Phase 2 adds event-specific seat availability and pending bookings.
 
 ## Requirements
 
@@ -39,8 +39,22 @@ All resources support `POST` (create), `GET` (list), `GET /{id}`, `PUT /{id}` (r
 | Screens | `/api/screens` | Can filter by `?venueId={id}` |
 | Seats | `/api/seats` | Can filter by `?screenId={id}`; row/seat positions are unique per screen |
 | Events | `/api/events` | Can filter by `?screenId={id}`; end time must be after start time |
+| Event seat availability | `/api/events/{eventId}/seats` | Lists the event screen's seats as `AVAILABLE` or `RESERVED` |
+| Bookings | `/api/bookings` | Create a pending booking, get a booking, list by `?userId={id}`, or cancel |
 
 Screens require an existing venue. Seats and events require an existing screen. A venue with screens, or a screen with seats or events, cannot be deleted.
+
+Booking creation reserves the requested seats for that event and rejects seats assigned to a different screen or already reserved for the event. A unique MongoDB index on `(eventId, seatId)` is the final guard against two concurrent requests reserving the same seat. A booking starts as `PENDING`; `DELETE /api/bookings/{bookingId}` cancels it and releases its seats, and repeating the cancellation is safe. Pending bookings do not expire automatically yet, so cancel them explicitly. User IDs are caller-supplied identifiers in this phase; authentication and user account management are not implemented yet. Pending-booking expiration and payment confirmation are planned follow-up work.
+
+Example booking:
+
+```json
+{
+  "userId": "user-101",
+  "eventId": "<event-id>",
+  "seatIds": ["<seat-id-1>", "<seat-id-2>"]
+}
+```
 
 Example venue:
 
@@ -128,12 +142,12 @@ com.seatlock
     └── exception
 ```
 
-Feature-specific code stays together: `api` exposes HTTP endpoints, `application` coordinates use cases, `domain` owns business rules and MongoDB documents, and `infrastructure.persistence` contains repository adapters. Reservation state and concurrency guarantees will be implemented in a later phase; physical seat records are not booking locks.
+Feature-specific code stays together: `api` exposes HTTP endpoints, `application` coordinates use cases, `domain` owns business rules and MongoDB documents, and `infrastructure.persistence` contains repository adapters. Physical seats are reusable across events; event-specific reservations are stored separately from the screen seat inventory.
 
 ## Roadmap
 
 - [x] Phase 1: MongoDB configuration and event/venue/screen/seat CRUD APIs
-- [ ] Phase 2: Event-specific seat inventory and booking flow
+- [x] Phase 2: Event-specific seat availability and pending booking flow
 - [ ] Phase 3: Concurrency-safe reservations, expiration, and race-condition tests
 - [ ] Phase 4: Redis, RabbitMQ, payment simulation, and idempotency
 - [ ] Phase 5: Docker, API documentation, metrics, CI/CD, and deployment

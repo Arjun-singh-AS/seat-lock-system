@@ -4,11 +4,12 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.seatlock.booking.infrastructure.persistence.BookingSeatRepository;
 import com.seatlock.shared.exception.ResourceConflictException;
 import com.seatlock.shared.exception.ResourceNotFoundException;
 import com.seatlock.venue.api.SeatRequest;
-import com.seatlock.venue.domain.SeatDocument;
 import com.seatlock.venue.domain.ScreenDocument;
+import com.seatlock.venue.domain.SeatDocument;
 import com.seatlock.venue.infrastructure.persistence.ScreenRepository;
 import com.seatlock.venue.infrastructure.persistence.SeatRepository;
 
@@ -17,10 +18,12 @@ public class SeatService {
 
     private final SeatRepository seats;
     private final ScreenRepository screens;
+    private final BookingSeatRepository bookingSeats;
 
-    public SeatService(SeatRepository seats, ScreenRepository screens) {
+    public SeatService(SeatRepository seats, ScreenRepository screens, BookingSeatRepository bookingSeats) {
         this.seats = seats;
         this.screens = screens;
+        this.bookingSeats = bookingSeats;
     }
 
     public SeatDocument create(SeatRequest request) {
@@ -47,6 +50,9 @@ public class SeatService {
 
     public SeatDocument update(String id, SeatRequest request) {
         SeatDocument seat = findById(id);
+        if (!seat.getScreenId().equals(request.screenId()) && bookingSeats.existsBySeatId(id)) {
+            throw new ResourceConflictException("A reserved seat cannot be moved to another screen");
+        }
         ScreenDocument screen = requireScreen(request.screenId());
         long configuredSeats = seats.countByScreenId(request.screenId());
         if (!request.screenId().equals(seat.getScreenId()) && configuredSeats >= screen.getCapacity()) {
@@ -61,7 +67,11 @@ public class SeatService {
     }
 
     public void delete(String id) {
-        seats.delete(findById(id));
+        SeatDocument seat = findById(id);
+        if (bookingSeats.existsBySeatId(id)) {
+            throw new ResourceConflictException("A reserved seat cannot be deleted");
+        }
+        seats.delete(seat);
     }
 
     private ScreenDocument requireScreen(String screenId) {

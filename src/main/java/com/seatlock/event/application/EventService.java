@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.seatlock.booking.infrastructure.persistence.BookingRepository;
 import com.seatlock.event.api.EventRequest;
 import com.seatlock.event.domain.EventDocument;
 import com.seatlock.event.infrastructure.persistence.EventRepository;
@@ -16,10 +17,12 @@ public class EventService {
 
     private final EventRepository events;
     private final ScreenRepository screens;
+    private final BookingRepository bookings;
 
-    public EventService(EventRepository events, ScreenRepository screens) {
+    public EventService(EventRepository events, ScreenRepository screens, BookingRepository bookings) {
         this.events = events;
         this.screens = screens;
+        this.bookings = bookings;
     }
 
     public EventDocument create(EventRequest request) {
@@ -43,6 +46,9 @@ public class EventService {
     public EventDocument update(String id, EventRequest request) {
         EventDocument event = findById(id);
         validate(request);
+        if (!event.getScreenId().equals(request.screenId()) && bookings.existsByEventId(id)) {
+            throw new ResourceConflictException("Event screen cannot change after bookings have been created");
+        }
         event.setScreenId(request.screenId());
         event.setTitle(request.title());
         event.setDescription(request.description());
@@ -52,7 +58,11 @@ public class EventService {
     }
 
     public void delete(String id) {
-        events.delete(findById(id));
+        EventDocument event = findById(id);
+        if (bookings.existsByEventId(id)) {
+            throw new ResourceConflictException("Event cannot be deleted after bookings have been created");
+        }
+        events.delete(event);
     }
 
     private void validate(EventRequest request) {
